@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PocketBase – Budget Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCnYGWtLWVi60emX0aywsuIgTbiEQ9TpvU",
+  authDomain: "pocketbase-budget.firebaseapp.com",
+  projectId: "pocketbase-budget",
+  storageBucket: "pocketbase-budget.firebasestorage.app",
+  messagingSenderId: "605804759677",
+  appId: "1:605804759677:web:040bdffa456b26a5e4ff14"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// expose to global scope
+window._auth = auth;
+window._db = db;
+window._createUser = createUserWithEmailAndPassword;
+window._signIn = signInWithEmailAndPassword;
+window._signOut = signOut;
+window._onAuthStateChanged = onAuthStateChanged;
+window._doc = doc;
+window._setDoc = setDoc;
+window._getDoc = getDoc;
+
+onAuthStateChanged(auth, async (user) => {
+  if(user){
+    window._firebaseUser = user;
+    await window.loadFromCloud();
+  }
+});
+</script>
+<style>
+:root{
+  --bg:#0e0e10; --surface:#17171a; --card:#1f1f24; --border:#2e2e35;
+  --accent:#f0c040; --savings:#4fd1a5; --cash:#f07060; --online:#60a0f0;
+  --rent:#c080f0; --split:#f0a040; --text:#f0f0f0; --muted:#7a7a8a;
+  --danger:#f05060; --r:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 90px;}
+
+/* HEADER */
+header{padding:26px 20px 0;}
+.logo{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.5px;}
+.logo span{color:var(--accent);}
+.date-tag{font-size:11px;color:var(--muted);margin-top:2px;letter-spacing:1px;text-transform:uppercase;}
+
+/* TABS */
+.tabs{display:flex;gap:8px;padding:16px 20px 0;}
+.tab{flex:1;padding:12px 0;border-radius:11px;border:1.5px solid var(--border);background:var(--surface);
+  color:var(--muted);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;
+  transition:all .2s;text-align:center;}
+.tab.act-m{background:var(--accent);color:#0e0e10;border-color:var(--accent);}
+.tab.act-s{background:var(--savings);color:#0e0e10;border-color:var(--savings);}
+.tab.act-c{background:var(--split);color:#0e0e10;border-color:var(--split);}
+
+/* COLLECT SECTION */
+.collect-overview{background:var(--card);border-radius:var(--r);padding:18px;border:1px solid rgba(240,160,64,.35);margin-bottom:12px;}
+.collect-name-header{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:var(--split);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.collect-person-card{background:var(--surface);border-radius:13px;padding:14px;border:1px solid var(--border);margin-bottom:10px;animation:slideIn .2s ease;}
+.collect-person-card.settled{border-color:rgba(79,209,165,.3);opacity:.7;}
+.cp-header{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.cp-avatar{width:38px;height:38px;border-radius:50%;background:rgba(240,160,64,.15);border:2px solid rgba(240,160,64,.3);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:15px;color:var(--split);flex-shrink:0;}
+.cp-avatar.done{background:rgba(79,209,165,.15);border-color:rgba(79,209,165,.3);color:var(--savings);}
+.cp-info{flex:1;}
+.cp-name{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;}
+.cp-status{font-size:10px;margin-top:2px;}
+.cp-total-owed{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;flex-shrink:0;}
+.cp-trips{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+.cp-trip-row{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--card);border-radius:9px;border:1px solid var(--border);}
+.cp-trip-name{flex:1;font-size:12px;color:var(--muted);}
+.cp-trip-amt{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;}
+.cp-trip-badge{font-size:10px;}
+.cp-actions{display:flex;gap:8px;}
+.collect-btn{flex:1;padding:9px 8px;border-radius:10px;border:1.5px solid;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;cursor:pointer;transition:all .15s;background:transparent;}
+.collect-btn.cash{color:var(--cash);border-color:var(--cash);}
+.collect-btn.cash:hover{background:rgba(240,96,80,.15);}
+.collect-btn.online{color:var(--online);border-color:var(--online);}
+.collect-btn.online:hover{background:rgba(96,160,240,.15);}
+.collect-btn.share{color:var(--split);border-color:var(--split);}
+.collect-btn.share:hover{background:rgba(240,160,64,.15);}
+.collect-btn:disabled{opacity:.4;cursor:not-allowed;}
+.collect-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px;}
+.share-sheet{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:200;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .25s;}
+.share-sheet.open{opacity:1;pointer-events:all;}
+.share-box{background:var(--card);width:100%;border-radius:22px 22px 0 0;padding:24px 20px 36px;border:1px solid var(--border);transform:translateY(40px);transition:transform .3s cubic-bezier(.2,.8,.4,1);max-height:85vh;overflow-y:auto;}
+.share-sheet.open .share-box{transform:translateY(0);}
+.share-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:14px;color:var(--split);}
+.share-text{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.7;font-family:'DM Mono',monospace;margin-bottom:14px;}
+.share-btns{display:flex;gap:10px;}
+.share-copy-btn{flex:2;padding:13px;background:var(--split);color:#0e0e10;border:none;border-radius:10px;font-family:'Syne',sans-serif;font-weight:800;font-size:14px;cursor:pointer;}
+.share-close-btn{flex:1;padding:13px;background:var(--surface);border:1.5px solid var(--border);color:var(--muted);border-radius:10px;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;}
+
+/* SECTIONS */
+.sec{display:none;padding:14px 20px;}
+.sec.on{display:block;}
+
+/* OVERVIEW */
+.ov{background:var(--card);border-radius:var(--r);padding:18px;border:1px solid var(--border);margin-bottom:12px;position:relative;overflow:hidden;}
+.ov::before{content:'';position:absolute;top:-28px;right:-28px;width:90px;height:90px;border-radius:50%;background:rgba(240,192,64,.05);}
+.ov-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+.ov-amt{font-family:'Syne',sans-serif;font-size:30px;font-weight:800;letter-spacing:-1px;}
+.c-acc{color:var(--accent);}
+.c-sav{color:var(--savings);}
+.ov-row{display:flex;gap:10px;margin-top:12px;}
+.stat{flex:1;background:var(--surface);border-radius:10px;padding:10px 11px;border:1px solid var(--border);}
+.stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;}
+.stat-val{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;}
+.prog-wrap{margin-top:12px;}
+.prog-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.8px;}
+.prog-track{background:var(--border);border-radius:6px;height:7px;overflow:hidden;}
+.prog-fill{height:100%;border-radius:6px;transition:width .5s ease;}
+.fill-m{background:linear-gradient(90deg,var(--accent),#f0804080);}
+
+/* BUDGET SET ROW */
+.budget-set-row{display:flex;gap:8px;margin-top:12px;}
+.budget-set-row input{flex:1;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;padding:8px 11px;outline:none;}
+.budget-set-row input:focus{border-color:var(--accent);}
+.budget-set-row button{padding:9px 16px;background:var(--accent);color:#0e0e10;border:none;border-radius:8px;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;}
+
+/* WALLET CARDS */
+.wallet-row{display:flex;gap:10px;margin-bottom:12px;}
+.wcard{flex:1;border-radius:14px;padding:14px;border:1.5px solid var(--border);background:var(--card);overflow:hidden;}
+.wcard.cash{border-color:rgba(240,112,96,.4);background:rgba(240,112,96,.06);}
+.wcard.online{border-color:rgba(96,160,240,.4);background:rgba(96,160,240,.06);}
+.wcard.split-w{border-color:rgba(240,160,64,.4);background:rgba(240,160,64,.06);}
+.wtop{display:flex;justify-content:space-between;align-items:flex-start;}
+.wlbl{font-size:10px;text-transform:uppercase;letter-spacing:.8px;font-weight:700;margin-bottom:6px;}
+.wlbl.c{color:var(--cash);}
+.wlbl.o{color:var(--online);}
+.wlbl.s{color:var(--split);}
+.wedit-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:7px;padding:3px 8px;font-size:10px;font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;transition:all .18s;}
+.wedit-btn:hover{border-color:var(--accent);color:var(--accent);}
+.wamt{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;}
+.wamt.c{color:var(--cash);}
+.wamt.o{color:var(--online);}
+.wamt.s{color:var(--split);}
+.wsub{font-size:10px;color:var(--muted);margin-top:3px;}
+.wbar{height:3px;border-radius:3px;background:var(--border);margin-top:10px;overflow:hidden;}
+.wbar-fill{height:100%;border-radius:3px;transition:width .4s;}
+.wbar-fill.c{background:var(--cash);}
+.wbar-fill.o{background:var(--online);}
+.wbar-fill.s{background:var(--split);}
+.wedit-row{display:none;margin-top:8px;gap:6px;flex-direction:column;}
+.wedit-row.open{display:flex;}
+.wedit-input{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;padding:7px 10px;outline:none;}
+.wedit-input:focus{border-color:var(--accent);}
+.wconfirm{width:100%;padding:9px;border-radius:8px;border:none;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;}
+
+/* HINT */
+.hint{display:none;background:rgba(240,192,64,.08);border:1px solid rgba(240,192,64,.25);border-radius:10px;padding:9px 13px;font-size:11px;color:var(--accent);margin-bottom:12px;text-align:center;}
+
+/* BUTTONS */
+.add-btn{width:100%;padding:13px;border:none;border-radius:12px;font-family:'Syne',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s,transform .1s;}
+.add-btn:active{transform:scale(.98);}
+.add-btn:hover{opacity:.9;}
+.add-btn.m{background:var(--accent);color:#0e0e10;}
+.add-btn.s{background:var(--savings);color:#0e0e10;}
+
+/* SAVINGS ACTIONS */
+.sav-acts{display:flex;gap:8px;margin-bottom:14px;}
+.sav-act{flex:1;padding:11px 6px;border-radius:11px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-family:'Syne',sans-serif;font-weight:700;font-size:11px;cursor:pointer;text-align:center;transition:all .18s;}
+.sav-act.exp{border-color:var(--savings);color:var(--savings);}
+.sav-act.rent{border-color:var(--rent);color:var(--rent);}
+.sav-act.wd{border-color:var(--danger);color:var(--danger);}
+.set-row{display:flex;gap:8px;margin-bottom:14px;align-items:flex-end;}
+.set-btn{padding:11px 14px;background:var(--border);color:var(--text);border:none;border-radius:10px;font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;transition:background .2s;}
+.set-btn:hover{background:var(--savings);color:#0e0e10;}
+
+/* MODAL */
+.moverlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:100;display:flex;align-items:flex-end;opacity:0;pointer-events:none;transition:opacity .25s;}
+.moverlay.open{opacity:1;pointer-events:all;}
+.modal{background:var(--card);width:100%;border-radius:22px 22px 0 0;padding:24px 20px 36px;border:1px solid var(--border);transform:translateY(40px);transition:transform .3s cubic-bezier(.2,.8,.4,1);max-height:92vh;overflow-y:auto;}
+.moverlay.open .modal{transform:translateY(0);}
+.modal-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-bottom:18px;}
+.fgrp{margin-bottom:13px;}
+.flbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;display:block;}
+.finput{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:'DM Mono',monospace;font-size:14px;padding:11px 13px;outline:none;transition:border-color .2s;}
+.finput:focus{border-color:var(--accent);}
+input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(.55);cursor:pointer;}
+
+/* PAYMENT TYPE TOGGLE */
+.pay-toggle{display:flex;gap:8px;}
+.pay-opt{flex:1;padding:10px 6px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-family:'DM Mono',monospace;font-size:12px;cursor:pointer;text-align:center;transition:all .2s;}
+.pay-opt.sel-cash{background:rgba(240,96,80,.15);border-color:var(--cash);color:var(--cash);}
+.pay-opt.sel-online{background:rgba(96,160,240,.15);border-color:var(--online);color:var(--online);}
+.pay-opt.sel-split{background:rgba(240,160,64,.15);border-color:var(--split);color:var(--split);}
+
+/* WALLET WARN */
+.wwarn{font-size:11px;padding:8px 11px;border-radius:8px;margin-top:-4px;margin-bottom:8px;display:none;}
+.wwarn.on{display:block;}
+.wwarn.wc{background:rgba(240,96,80,.12);color:var(--cash);border:1px solid rgba(240,96,80,.25);}
+.wwarn.wo{background:rgba(96,160,240,.12);color:var(--online);border:1px solid rgba(96,160,240,.25);}
+
+/* SPLIT INSIDE MODAL */
+.split-modal-box{background:var(--surface);border:1.5px solid rgba(240,160,64,.3);border-radius:12px;padding:14px;margin-top:4px;}
+.split-modal-box .flbl{color:var(--split);}
+.split-who-paid{display:flex;gap:8px;margin-bottom:10px;}
+.split-who-opt{flex:1;padding:8px 4px;border-radius:9px;border:1.5px solid var(--border);background:var(--card);color:var(--muted);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;cursor:pointer;text-align:center;transition:all .2s;}
+.split-who-opt.sel{background:rgba(240,160,64,.15);border-color:var(--split);color:var(--split);}
+.friend-row-input{display:flex;gap:7px;margin-bottom:7px;align-items:center;}
+.friend-row-input .finput{font-size:13px;padding:8px 10px;}
+.rm-friend{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:7px 10px;cursor:pointer;font-size:13px;flex-shrink:0;transition:color .2s;}
+.rm-friend:hover{color:var(--danger);border-color:var(--danger);}
+.add-friend-btn{background:none;border:1.5px dashed var(--border);color:var(--muted);width:100%;padding:9px;border-radius:10px;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;cursor:pointer;transition:all .2s;margin-top:4px;}
+.add-friend-btn:hover{border-color:var(--split);color:var(--split);}
+.split-equal-btn{background:rgba(240,160,64,.1);border:1px solid rgba(240,160,64,.3);color:var(--split);border-radius:8px;padding:6px 12px;font-size:11px;font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;margin-bottom:8px;width:100%;}
+.split-summary{background:rgba(240,160,64,.06);border:1px solid rgba(240,160,64,.2);border-radius:8px;padding:8px 11px;font-size:11px;color:var(--muted);margin-top:6px;}
+
+/* MODAL ACTIONS */
+.mactions{display:flex;gap:10px;margin-top:18px;}
+.btn-cancel{flex:1;padding:13px;background:var(--surface);border:1.5px solid var(--border);color:var(--muted);border-radius:10px;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;}
+.btn-save{flex:2;padding:13px;background:var(--accent);border:none;color:#0e0e10;border-radius:10px;font-family:'Syne',sans-serif;font-weight:800;font-size:14px;cursor:pointer;transition:opacity .2s;}
+.btn-save:hover{opacity:.9;}
+.btn-save.sv{background:var(--savings);}
+.btn-save.rv{background:var(--rent);color:#fff;}
+
+/* EXPENSE LIST */
+.sec-hd{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;}
+.exp-list{display:flex;flex-direction:column;gap:8px;}
+.eitem{background:var(--card);border-radius:12px;padding:12px 14px;border:1px solid var(--border);animation:slideIn .22s ease;}
+.eitem.is-split{border-color:rgba(240,160,64,.3);background:rgba(240,160,64,.03);}
+@keyframes slideIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+.erow{display:flex;align-items:center;gap:10px;}
+.eicon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.ic-cash{background:rgba(240,96,80,.15);}
+.ic-online{background:rgba(96,160,240,.15);}
+.ic-split{background:rgba(240,160,64,.15);}
+.einfo{flex:1;min-width:0;}
+.ename{font-family:'Syne',sans-serif;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.emeta{font-size:10px;color:var(--muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+.eamt{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;flex-shrink:0;}
+.eacts{display:flex;gap:4px;flex-shrink:0;}
+.act-btn{background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px 5px;border-radius:6px;transition:all .2s;}
+.act-btn.ed:hover{color:var(--accent);}
+.act-btn.dl{background:rgba(240,80,96,.12);border:1px solid rgba(240,80,96,.3);color:var(--danger);font-size:13px;padding:4px 8px;border-radius:7px;}
+.act-btn.dl:hover{background:rgba(240,80,96,.25);border-color:var(--danger);}
+.empty{text-align:center;padding:36px 20px;color:var(--muted);font-size:13px;}
+.empty-icon{font-size:30px;margin-bottom:8px;}
+
+/* BADGES */
+.badge{display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
+.b-cash{background:rgba(240,96,80,.14);color:var(--cash);}
+.b-online{background:rgba(96,160,240,.14);color:var(--online);}
+.b-split{background:rgba(240,160,64,.14);color:var(--split);}
+.b-date{background:rgba(240,192,64,.10);color:var(--accent);}
+.b-add{background:rgba(79,209,165,.14);color:var(--savings);}
+.b-wd{background:rgba(240,80,96,.14);color:var(--danger);}
+.b-rent{background:rgba(192,128,240,.14);color:var(--rent);}
+
+/* SPLIT DETAIL INSIDE EXPENSE ITEM */
+.split-detail{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.split-meta-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.split-meta-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;}
+.split-progress{height:4px;border-radius:4px;background:var(--border);overflow:hidden;margin-bottom:8px;}
+.split-progress-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--savings),var(--online));transition:width .4s;}
+.friend-settle-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--surface);border-radius:9px;border:1px solid var(--border);margin-bottom:5px;}
+.fsname{flex:1;font-family:'Syne',sans-serif;font-size:12px;font-weight:600;}
+.fsamt{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;flex-shrink:0;}
+.fs-btns{display:flex;gap:5px;flex-shrink:0;}
+.fs-btn{padding:4px 9px;border-radius:6px;border:1px solid var(--border);background:var(--bg);font-size:10px;cursor:pointer;font-family:'Syne',sans-serif;font-weight:700;transition:all .15s;}
+.fs-btn.c{color:var(--cash);border-color:var(--cash);}
+.fs-btn.o{color:var(--online);border-color:var(--online);}
+.fs-settled{font-size:10px;color:var(--savings);font-weight:700;}
+
+/* HISTORY */
+.hist-month{background:var(--card);border-radius:var(--r);border:1px solid var(--border);margin-bottom:14px;overflow:hidden;}
+.hist-month-header{padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .15s;}
+.hist-month-header:hover{background:rgba(240,192,64,.04);}
+.hist-month-name{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;flex:1;}
+.hist-month-total{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:var(--cash);}
+.hist-chevron{font-size:12px;color:var(--muted);transition:transform .25s;}
+.hist-chevron.open{transform:rotate(180deg);}
+.hist-stats{display:flex;gap:8px;padding:0 16px 12px;}
+.hist-stat{flex:1;background:var(--surface);border-radius:10px;padding:9px 11px;border:1px solid var(--border);}
+.hist-stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:3px;}
+.hist-stat-val{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;}
+.hist-items{padding:0 12px 12px;display:flex;flex-direction:column;gap:6px;}
+.hist-item{background:var(--surface);border-radius:10px;padding:10px 12px;border:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.hist-item-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
+.hist-item-name{flex:1;font-family:'Syne',sans-serif;font-size:12px;font-weight:600;}
+.hist-item-meta{font-size:10px;color:var(--muted);margin-top:2px;}
+.hist-item-amt{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;flex-shrink:0;}
+.hist-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:13px;}
+
+/* TOAST */
+#toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:#1f1f24;border:1px solid var(--border);color:var(--text);font-family:'Syne',sans-serif;font-size:13px;font-weight:600;padding:11px 20px;border-radius:12px;z-index:999;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:88vw;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.4);}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast.err{border-color:var(--danger);color:var(--danger);}
+#toast.warn{border-color:var(--accent);color:var(--accent);}
+#toast.ok{border-color:var(--savings);color:var(--savings);}
+
+/* PAID FOR FRIENDS TOGGLE */
+.paid-friends-toggle{display:flex;align-items:center;gap:10px;background:var(--surface);border:1.5px solid var(--border);border-radius:11px;padding:11px 14px;cursor:pointer;transition:all .2s;user-select:none;}
+.paid-friends-toggle.on{border-color:rgba(240,160,64,.5);background:rgba(240,160,64,.06);}
+.paid-friends-toggle span:first-child{font-size:16px;}
+#pftLabel{flex:1;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--muted);}
+.paid-friends-toggle.on #pftLabel{color:var(--split);}
+.pft-switch{font-family:'Syne',sans-serif;font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;background:var(--border);color:var(--muted);letter-spacing:.5px;}
+.paid-friends-toggle.on .pft-switch{background:var(--split);color:#0e0e10;}
+
+/* LOGIN */
+.login-overlay{position:fixed;inset:0;background:var(--bg);z-index:999;display:flex;align-items:center;justify-content:center;padding:24px;}
+.login-box{width:100%;max-width:360px;background:var(--card);border-radius:22px;padding:32px 24px;border:1px solid var(--border);}
+.login-logo{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;text-align:center;margin-bottom:4px;}
+.login-logo span{color:var(--accent);}
+.login-sub{text-align:center;font-size:12px;color:var(--muted);margin-bottom:28px;letter-spacing:.5px;}
+.login-field{margin-bottom:14px;}
+.login-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;display:block;}
+.login-input{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:'DM Mono',monospace;font-size:14px;padding:12px 14px;outline:none;transition:border-color .2s;}
+.login-input:focus{border-color:var(--accent);}
+.login-btn{width:100%;padding:14px;background:var(--accent);color:#0e0e10;border:none;border-radius:12px;font-family:'Syne',sans-serif;font-weight:800;font-size:15px;cursor:pointer;margin-top:6px;transition:opacity .2s;}
+.login-btn:hover{opacity:.9;}
+.login-err{text-align:center;font-size:12px;color:var(--danger);margin-top:12px;min-height:18px;font-family:'Syne',sans-serif;font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <div class="login-logo">Pocket<span>Base</span></div>
+    <div class="login-sub">YOUR PERSONAL BUDGET TRACKER</div>
+    <div class="login-field">
+      <label class="login-label">Username</label>
+      <input type="text" class="login-input" id="loginUser" placeholder="Enter username" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <label class="login-label">Password</label>
+      <input type="password" class="login-input" id="loginPass" placeholder="Enter password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Login</button>
+    <div class="login-err" id="loginErr"></div>
+    <div style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted)">Don't have an account? <span onclick="showSignup()" style="color:var(--accent);cursor:pointer;font-weight:700;">Sign Up</span></div>
+    <div style="text-align:center;margin-top:8px;font-size:11px;color:var(--muted)"><span onclick="showReset()" style="color:var(--muted);cursor:pointer;">Forgot password?</span></div>
+  </div>
+</div>
+
+<!-- SIGNUP SCREEN -->
+<div class="login-overlay" id="signupOverlay" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">Pocket<span>Base</span></div>
+    <div class="login-sub">CREATE YOUR ACCOUNT</div>
+    <div class="login-field">
+      <label class="login-label">Username</label>
+      <input type="text" class="login-input" id="signupUser" placeholder="Choose a username">
+    </div>
+    <div class="login-field">
+      <label class="login-label">Password</label>
+      <input type="password" class="login-input" id="signupPass" placeholder="Choose a password">
+    </div>
+    <button class="login-btn" id="signupBtn" onclick="doSignup()">Create Account</button>
+    <div class="login-err" id="signupErr"></div>
+    <div style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted)">Already have an account? <span onclick="showLogin()" style="color:var(--accent);cursor:pointer;font-weight:700;">Login</span></div>
+  </div>
+</div>
+
+<header>
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <div class="logo">Pocket<span>Base</span></div>
+      <div class="date-tag" id="hDate"></div>
+    </div>
+    <button onclick="showChangePass()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 10px;font-size:11px;font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;">⚙️ Account</button>
+  </div>
+</header>
+
+<!-- CHANGE PASSWORD MODAL -->
+<div class="moverlay" id="changePassOverlay" onclick="if(event.target===this)closeChangePass()">
+  <div class="modal">
+    <div class="modal-title">🔑 Change Password</div>
+    <div class="fgrp">
+      <label class="flbl">Current Password</label>
+      <input type="password" class="finput" id="cpCurrent" placeholder="Enter current password">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">New Password</label>
+      <input type="password" class="finput" id="cpNew" placeholder="Enter new password">
+    </div>
+    <div class="fgrp">
+      <label class="flbl">Confirm New Password</label>
+      <input type="password" class="finput" id="cpConfirm" placeholder="Confirm new password">
+    </div>
+    <div class="login-err" id="cpErr" style="margin-bottom:10px;"></div>
+    <div class="mactions">
+      <button class="btn-cancel" onclick="closeChangePass()">Cancel</button>
+      <button class="btn-save" onclick="doChangePass()">Update</button>
+    </div>
+    <div style="text-align:center;margin-top:14px;">
+      <button onclick="doLogout()" style="background:none;border:none;color:var(--danger);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;">🚪 Logout</button>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab act-m" id="tabMonthly"  onclick="switchTab('monthly')">📅 Monthly</button>
+  <button class="tab"       id="tabSavings"  onclick="switchTab('savings')">🏦 Savings</button>
+  <button class="tab"       id="tabCollect"  onclick="switchTab('collect')">🤝 Collect</button>
+  <button class="tab"       id="tabHistory"  onclick="switchTab('history')">📊 History</button>
+</div>
+
+<!-- RESET PASSWORD SCREEN -->
+<div class="login-overlay" id="resetOverlay" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">Pocket<span>Base</span></div>
+    <div class="login-sub">RESET PASSWORD</div>
+    <div class="login-field">
+      <label class="login-label">Username</label>
+      <input type="text" class="login-input" id="resetUser" placeholder="Enter your username">
+    </div>
+    <div class="login-field">
+      <label class="login-label">New Password</label>
+      <input type="password" class="login-input" id="resetPass1" placeholder="Enter new password">
+    </div>
+    <div class="login-field">
+      <label class="login-label">Confirm Password</label>
+      <input type="password" class="login-input" id="resetPass2" placeholder="Confirm new password">
+    </div>
+    <button class="login-btn" id="resetBtn" onclick="doReset()">Reset Password</button>
+    <div class="login-err" id="resetErr"></div>
+    <div style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted)"><span onclick="showLogin()" style="color:var(--accent);cursor:pointer;font-weight:700;">← Back to Login</span></div>
+  </div>
+</div>
+
+<!-- ══ MONTHLY ══ -->
+<div class="sec on" id="secMonthly">
+  <div style="margin-top:14px"></div>
+
+  <!-- Overview -->
+  <div class="ov">
+    <div class="ov-lbl">Total Remaining</div>
+    <div class="ov-amt c-acc" id="remaining">₹0</div>
+    <div class="ov-row">
+      <div class="stat"><div class="stat-lbl">Total Budget</div><div class="stat-val" id="budgetDisp" style="color:var(--accent)">₹0</div></div>
+      <div class="stat"><div class="stat-lbl">Total Spent</div><div class="stat-val" id="totalSpent" style="color:var(--cash)">₹0</div></div>
+    </div>
+    <div class="budget-set-row">
+      <input type="number" id="budgetInput" placeholder="Set total budget (₹)">
+      <button onclick="setBudget()">Set</button>
+    </div>
+    <div class="prog-wrap">
+      <div class="prog-lbl"><span>Spent</span><span id="spentPct">0%</span></div>
+      <div class="prog-track"><div class="prog-fill fill-m" id="progBar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- Wallet cards: Cash | Online | Split Owed -->
+  <div class="wallet-row">
+    <!-- CASH -->
+    <div class="wcard cash">
+      <div class="wtop">
+        <div><div class="wlbl c">💵 Cash</div><div class="wamt c" id="cashBal">₹0</div><div class="wsub" id="cashSub">Spent ₹0</div></div>
+        <button class="wedit-btn" onclick="toggleWEdit('cash')">✏ Edit</button>
+      </div>
+      <div class="wbar"><div class="wbar-fill c" id="cashBar" style="width:0%"></div></div>
+      <div class="wedit-row" id="cashEditRow">
+        <input type="number" class="wedit-input" id="cashIn" placeholder="Set cash amount">
+        <button class="wconfirm" style="background:var(--cash);color:#fff" onclick="setWallet('cash')">Set</button>
+      </div>
+    </div>
+    <!-- ONLINE -->
+    <div class="wcard online">
+      <div class="wtop">
+        <div><div class="wlbl o">📱 Online</div><div class="wamt o" id="onlineBal">₹0</div><div class="wsub" id="onlineSub">Spent ₹0</div></div>
+        <button class="wedit-btn" onclick="toggleWEdit('online')">✏ Edit</button>
+      </div>
+      <div class="wbar"><div class="wbar-fill o" id="onlineBar" style="width:0%"></div></div>
+      <div class="wedit-row" id="onlineEditRow">
+        <input type="number" class="wedit-input" id="onlineIn" placeholder="Set online amount">
+        <button class="wconfirm" style="background:var(--online);color:#fff" onclick="setWallet('online')">Set</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Split Summary card (shows only when there are split expenses) -->
+  <div class="wcard split-w" id="splitSummaryCard" style="display:none;margin-bottom:12px;">
+    <div class="wtop">
+      <div><div class="wlbl s">🤝 Splits Owed to You</div><div class="wamt s" id="splitOwedAmt">₹0</div><div class="wsub" id="splitOwedSub">0 pending</div></div>
+    </div>
+    <div class="wbar"><div class="wbar-fill s" id="splitRecBar" style="width:0%"></div></div>
+  </div>
+
+  <div class="hint" id="allocHint"></div>
+  <button class="add-btn m" onclick="openModal('monthly')">＋ Add Expense</button>
+  <div class="sec-hd">This Month's Expenses</div>
+  <div class="exp-list" id="monthlyList"></div>
+</div>
+
+<!-- ══ SAVINGS ══ -->
+<div class="sec" id="secSavings">
+  <div style="margin-top:14px"></div>
+  <div class="set-row">
+    <div style="flex:1"><label class="flbl">Deposit to Savings (₹)</label><input type="number" class="finput" id="savInput" placeholder="Amount"></div>
+    <button class="set-btn" onclick="addSavings()">Add</button>
+  </div>
+  <div class="ov" style="border-color:#283530">
+    <div class="ov-lbl">Total Savings</div>
+    <div class="ov-amt c-sav" id="totalSav">₹0</div>
+    <div class="ov-row">
+      <div class="stat"><div class="stat-lbl">Deposited</div><div class="stat-val" id="savAdded" style="color:var(--savings)">₹0</div></div>
+      <div class="stat"><div class="stat-lbl">Spent / Out</div><div class="stat-val" id="savOut" style="color:var(--danger)">₹0</div></div>
+    </div>
+  </div>
+  <div class="sav-acts">
+    <button class="sav-act exp" onclick="openModal('sav-exp')">💸 Expense</button>
+    <button class="sav-act rent" onclick="openModal('sav-rent')">🏠 Rent</button>
+    <button class="sav-act wd" onclick="openModal('sav-wd')">🏧 Withdraw</button>
+  </div>
+  <div class="sec-hd">Savings Log</div>
+  <div class="exp-list" id="savList"></div>
+</div>
+
+<!-- ══ COLLECT ══ -->
+<div class="sec" id="secCollect">
+  <div style="margin-top:14px"></div>
+  <div class="ov" style="border-color:rgba(240,160,64,.3)">
+    <div class="ov-lbl">Total Owed to You</div>
+    <div class="ov-amt" id="collectTotal" style="color:var(--split)">₹0</div>
+    <div class="ov-row">
+      <div class="stat"><div class="stat-lbl">Pending</div><div class="stat-val" id="collectPending" style="color:var(--danger)">₹0</div></div>
+      <div class="stat"><div class="stat-lbl">Collected</div><div class="stat-val" id="collectDone" style="color:var(--savings)">₹0</div></div>
+    </div>
+  </div>
+  <div class="sec-hd">Who Owes You</div>
+  <div id="collectList"></div>
+</div>
+
+<!-- ══ MODAL ══ -->
+<div class="moverlay" id="moverlay" onclick="closeOut(event)">
+  <div class="modal">
+    <div class="modal-title" id="mTitle">Add</div>
+
+    <div id="nameGrp" class="fgrp">
+      <label class="flbl">Description</label>
+      <input type="text" class="finput" id="expName" placeholder="e.g. Grocery, Petrol…">
+    </div>
+    <div id="paidToGrp" class="fgrp" style="display:none">
+      <label class="flbl">Paid To</label>
+      <input type="text" class="finput" id="paidTo" placeholder="e.g. Landlord name…">
+    </div>
+    <div id="amtGrp" class="fgrp">
+      <label class="flbl">Amount (₹)</label>
+      <input type="number" class="finput" id="expAmt" placeholder="0.00" oninput="walletWarn()">
+    </div>
+    <div class="wwarn" id="wwarn"></div>
+    <div id="dateGrp" class="fgrp">
+      <label class="flbl">Date</label>
+      <input type="date" class="finput" id="expDate">
+    </div>
+    <div id="payGrp" class="fgrp">
+      <label class="flbl">Payment Method</label>
+      <div class="pay-toggle">
+        <div class="pay-opt sel-cash" id="optCash" onclick="setPay('cash')">💵 Cash</div>
+        <div class="pay-opt" id="optOnline" onclick="setPay('online')">📱 Online</div>
+
+      </div>
+    </div>
+
+    <!-- PAID FOR FRIENDS toggle — always shown for monthly -->
+    <div id="splitToggleRow" class="fgrp" style="display:none">
+      <div class="paid-friends-toggle" id="paidFriendsToggle" onclick="togglePaidFriends()">
+        <span id="pftIcon">🤝</span>
+        <span id="pftLabel">Also paid for friends?</span>
+        <span class="pft-switch" id="pftSwitch">OFF</span>
+      </div>
+    </div>
+    <div id="splitBox" style="display:none" class="fgrp">
+      <div class="split-modal-box">
+        <div class="flbl">Friends &amp; Their Share</div>
+        <div id="friendInputs"></div>
+        <button class="split-equal-btn" onclick="splitEqually()">⚖ Split Equally</button>
+        <button class="add-friend-btn" onclick="addFriend()">＋ Add Friend</button>
+        <div class="split-summary" id="splitSummary" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="mactions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" id="saveBtn" onclick="save()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- SHARE SHEET -->
+<div class="share-sheet" id="shareSheet" onclick="closeShareOutside(event)">
+  <div class="share-box">
+    <div class="share-title">📤 Share Payment Request</div>
+    <div class="share-text" id="shareText"></div>
+    <div class="share-btns">
+      <button class="share-copy-btn" onclick="copyShare()">📋 Copy Message</button>
+      <button class="share-close-btn" onclick="closeShare()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ══ HISTORY ══ -->
+<div class="sec" id="secHistory">
+  <div style="margin-top:14px"></div>
+  <div id="historyList"></div>
+</div>
+
+<script>
+/* ══ FIREBASE STATE ══ */
+let currentUser = null;
+let S = {monthly:[],savings:[],savBal:0,cashW:0,onlineW:0,budget:0};
+
+window.loadFromCloud = async function(){
+  if(!window._firebaseUser) return;
+  try{
+    const ref = window._doc(window._db, 'budgets', window._firebaseUser.uid);
+    const snap = await window._getDoc(ref);
+    if(snap.exists() && snap.data().state){
+      S = JSON.parse(snap.data().state);
+    }
+  }catch(e){ console.error('Load error',e); }
+  renderMonthly(); renderSavings();
+  g('loginOverlay').style.display='none';
+  g('signupOverlay').style.display='none';
+};
+
+async function persist(){
+  if(!window._firebaseUser) return;
+  try{
+    const ref = window._doc(window._db, 'budgets', window._firebaseUser.uid);
+    await window._setDoc(ref, {state: JSON.stringify(S)});
+  }catch(e){ console.error('Save error',e); }
+}
+
+/* ══ LOGIN ══ */
+async function doLogin(){
+  const u = g('loginUser').value.trim();
+  const p = g('loginPass').value;
+  if(!u||!p){g('loginErr').textContent='❌ Enter username and password';return;}
+  // Firebase uses email format — append domain
+  const email = u + '@pocketbase.app';
+  const btn = g('loginBtn');
+  btn.textContent='Logging in...'; btn.disabled=true;
+  try{
+    await window._signIn(window._auth, email, p);
+    // onAuthStateChanged will handle loading data
+    g('loginErr').textContent='';
+  }catch(e){
+    if(e.code==='auth/user-not-found'||e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'){
+      g('loginErr').textContent='❌ Incorrect username or password';
+    } else {
+      g('loginErr').textContent='❌ '+e.message;
+    }
+  }
+  btn.textContent='Login'; btn.disabled=false;
+}
+
+async function doSignup(){
+  const u = g('signupUser').value.trim();
+  const p = g('signupPass').value;
+  if(!u||!p){g('signupErr').textContent='❌ Enter username and password';return;}
+  if(p.length<6){g('signupErr').textContent='❌ Password must be at least 6 characters';return;}
+  const email = u + '@pocketbase.app';
+  const btn = g('signupBtn');
+  btn.textContent='Creating...'; btn.disabled=true;
+  try{
+    await window._createUser(window._auth, email, p);
+    toast('Account created! Welcome 🎉','ok');
+    // onAuthStateChanged will handle loading
+    g('signupErr').textContent='';
+  }catch(e){
+    if(e.code==='auth/email-already-in-use'){
+      g('signupErr').textContent='❌ Username already taken!';
+    } else {
+      g('signupErr').textContent='❌ '+e.message;
+    }
+  }
+  btn.textContent='Create Account'; btn.disabled=false;
+}
+
+async function doReset(){
+  const u = g('resetUser').value.trim();
+  const p1 = g('resetPass1').value;
+  const p2 = g('resetPass2').value;
+  if(!u||!p1||!p2){g('resetErr').textContent='❌ Fill all fields';return;}
+  if(p1!==p2){g('resetErr').textContent='❌ Passwords do not match';return;}
+  g('resetErr').textContent='⚠️ For password reset, please contact the app admin.';
+}
+
+function showSignup(){
+  g('loginOverlay').style.display='none';
+  g('signupOverlay').style.display='flex';
+}
+function showLogin(){
+  g('signupOverlay').style.display='none';
+  g('resetOverlay').style.display='none';
+  g('loginOverlay').style.display='flex';
+}
+function showReset(){
+  g('loginOverlay').style.display='none';
+  g('resetOverlay').style.display='flex';
+}
+function checkAuth(){
+  if(!window._firebaseUser){
+    g('loginOverlay').style.display='flex';
+  }
+}
+
+/* ══ CHANGE PASSWORD & LOGOUT ══ */
+function showChangePass(){
+  g('cpCurrent').value=''; g('cpNew').value=''; g('cpConfirm').value='';
+  g('cpErr').textContent='';
+  g('changePassOverlay').classList.add('open');
+}
+function closeChangePass(){ g('changePassOverlay').classList.remove('open'); }
+async function doChangePass(){
+  const np=g('cpNew').value;
+  const nc=g('cpConfirm').value;
+  if(!np||!nc){g('cpErr').textContent='❌ Fill all fields';return;}
+  if(np!==nc){g('cpErr').textContent='❌ Passwords do not match';return;}
+  if(np.length<6){g('cpErr').textContent='❌ Min 6 characters';return;}
+  g('cpErr').textContent='⚠️ Password change not supported yet. Contact admin.';
+}
+async function doLogout(){
+  await window._signOut(window._auth);
+  window._firebaseUser = null;
+  S={monthly:[],savings:[],savBal:0,cashW:0,onlineW:0,budget:0};
+  closeChangePass();
+  g('loginOverlay').style.display='flex';
+}
+
+/* ══ INIT ══ */
+checkAuth();
+</script>
+
+</body>
+</html>
